@@ -1,2 +1,5 @@
 # grok-pump-kanban
-Illustrative Grok-built pump.fun terminal as a Kanban/to-do board. Simulated numbers only. Inspired by @issatheblows demos.
+
+Single-file simulated Kanban trading terminal (visual demo only — no blockchain, wallets, or keys).
+
+Live: https://bradarb8888-alt.github.io/grok-pump-kanban/

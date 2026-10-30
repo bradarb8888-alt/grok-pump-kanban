@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>ISSA TERMINAL · Simulated Kanban</title>
+<style>
+*{box-sizing:border-box}body{margin:0;background:#000;color:#ddd;font:13px/1.4 "JetBrains Mono",Menlo,Consolas,monospace;height:100vh;display:flex;flex-direction:column}
+header{display:flex;align-items:center;gap:18px;padding:12px 18px;border-bottom:1px solid #222;flex-wrap:wrap}
+.badge{border:1px solid #444;padding:4px 10px;border-radius:4px;font-weight:700;letter-spacing:1px}.badge b{color:#7cf}
+.live{color:#f44;font-weight:700;text-shadow:0 0 8px #f44;animation:p 1.2s infinite}.live.off{animation:none;color:#666;text-shadow:none}
+@keyframes p{50%{opacity:.4}}
+.stat{color:#888}.stat span{color:#fff;font-weight:700}.green{color:#3f6!important;text-shadow:0 0 6px #3f64}.red{color:#f55!important}
+.prog{flex:1;min-width:160px;height:8px;background:#111;border:1px solid #333;border-radius:4px;overflow:hidden}.prog div{height:100%;width:0;background:linear-gradient(90deg,#3f6,#7cf);transition:width .6s}
+.sim{font-size:10px;color:#555}
+main{flex:1;display:grid;grid-template-columns:repeat(3,1fr);gap:12px;padding:12px 18px;min-height:0}
+.col{border:1px solid #222;border-top:3px solid var(--c);border-radius:6px;background:#060606;display:flex;flex-direction:column;min-height:0}
+.col h2{margin:0;padding:10px;font-size:12px;letter-spacing:2px;color:var(--c);display:flex;justify-content:space-between}
+.list{flex:1;overflow:auto;padding:8px;display:flex;flex-direction:column;gap:8px}
+#checking{--c:#fb3}#holding{--c:#a7f}#done{--c:#3f6}
+.card{border:1px solid #2a2a2a;border-left:3px solid var(--c);background:#0d0d0d;padding:8px 10px;border-radius:4px;animation:in .45s ease}
+@keyframes in{from{opacity:0;transform:translateX(-30px)}to{opacity:1;transform:none}}
+.card .t{font-weight:700;font-size:14px;display:flex;justify-content:space-between}.card .m{color:#777;font-size:11px}.card .r{margin-top:4px;font-size:11px}
+.card.win{border-left-color:#3f6}.card.loss,.card.skip{border-left-color:#f55}.card.skip{opacity:.65}
+footer{border-top:1px solid #222;padding:8px 18px;height:120px;overflow:auto;color:#8a8;font-size:12px}footer div:last-child{color:#cfc}
+.modal{position:fixed;inset:0;background:#000c;display:none;align-items:center;justify-content:center}.modal.on{display:flex}
+.box{border:1px solid #3f6;box-shadow:0 0 30px #3f63;background:#050505;padding:28px 36px;border-radius:8px;text-align:center}
+.box h1{margin:0 0 8px;font-size:30px}.box p{color:#aaa}button{background:#3f6;color:#000;border:0;padding:10px 22px;font:inherit;font-weight:700;border-radius:4px;cursor:pointer}
+</style></head><body>
+<header><div class="badge">Grok Bot / <b>ISSA TERMINAL</b></div><div id="live" class="live">● LIVE</div>
+<div class="stat">BANK <span id="bank">$1,500</span></div><div class="stat">P&L <span id="pnl" class="green">+$0</span></div>
+<div class="stat">MULT <span id="mult">1.00×</span></div><div class="stat">W/L <span id="wl">0/0</span></div>
+<div class="stat">GOAL 4×</div><div class="prog"><div id="bar"></div></div><div class="sim">SIMULATION · NOT REAL</div></header>
+<main><section class="col" id="checking"><h2>CHECKING <span class="n">0</span></h2><div class="list"></div></section>
+<section class="col" id="holding"><h2>HOLDING <span class="n">0</span></h2><div class="list"></div></section>
+<section class="col" id="done"><h2>DONE <span class="n">0</span></h2><div class="list"></div></section></main>
+<footer id="log"></footer>
+<div class="modal" id="modal"><div class="box"><p>GOAL HIT · BOARD FROZEN</p><h1 class="green" id="sumH"></h1><p id="sumP"></p><button onclick="start()">↻ Replay</button></div></div>
+<script>
+// Pure simulation. No blockchain, no wallets, no keys.
+const START=1500,GOAL=4,STAKE=150;
+// out: realized P&L if bought; bundleMove: exits early on bundle move
+const SEQ=[
+["$ZEPH",4,12,12000,0,420],["$MOGU",18,9,3400,0],["$FLUX",3,14,8800,0,-30,1],["$KIRA",6,8,15200,0,610],
+["$BONKR",2,31,22000,0],["$NOVA",5,11,9100,0,380],["$RUGZ",3,6,5000,1],["$ORBT",7,15,18700,0,905],
+["$WAGM",14,22,2100,0],["$PIXL",2,10,11400,0,540],["$DRIP",4,41,6600,0],["$LUMA",8,13,13900,0,720],
+["$SCAM2",5,9,4000,1],["$TIDE",3,18,7300,0,310],["$GLOW",9,20,16100,0,830],["$HYPE",22,35,30000,0]];
+let coins,bank,wins,losses,bought,timers=[],frozen;
+const $=s=>document.querySelector(s),fmt=n=>(n<0?"-$":"$")+Math.abs(Math.round(n)).toLocaleString();
+function log(m){const d=document.createElement("div");d.textContent=new Date().toLocaleTimeString()+"  "+m;$("#log").append(d);$("#log").scrollTop=1e9}
+function later(f,ms){timers.push(setTimeout(()=>{if(!frozen)f()},ms))}
+function render(){for(const s of["checking","holding","done"]){const l=$("#"+s+" .list");const cs=coins.filter(c=>c.status==s);if(s=="done")cs.reverse();
+$("#"+s+" .n").textContent=cs.length;cs.forEach(c=>{let el=c.el;if(!el||el.parentNode!==l){el?.remove();el=c.el=document.createElement("div");l.append(el)}
+el.className="card "+(c.cls||"");el.innerHTML=`<div class="t">${c.ticker}<span class="${c.pnl>0?"green":c.pnl<0?"red":""}">${c.status=="done"&&c.entryPrice?(c.pnl>=0?"+":"")+fmt(c.pnl):c.status=="holding"?c.live:""}</span></div>
+<div class="m">dev ${c.devHold}% · bundle ${c.bundlePct}% · X ${(c.xPosts/1000).toFixed(1)}k${c.isKnownRug?" · KNOWN RUG":""}</div><div class="r ${c.cls=="win"?"green":c.cls?"red":""}">${c.reason}</div>`;l.append(el)})}
+const mult=bank/START;$("#bank").textContent=fmt(bank);const p=bank-START;$("#pnl").textContent=(p>=0?"+":"")+fmt(p);$("#pnl").className=p>=0?"green":"red";
+$("#mult").textContent=mult.toFixed(2)+"×";$("#wl").textContent=wins+"/"+losses;$("#bar").style.width=Math.min(100,(mult-1)/(GOAL-1)*100)+"%"}
+function check(c){if(c.isKnownRug)return"known rug · permanent skip";if(c.devHold>10)return`dev holds ${c.devHold}% > 10 · skip`;if(c.bundlePct>25)return`bundle ${c.bundlePct}% > 25 · skip`;return""}
+function spawn(i){if(i>=SEQ.length)return;const [t,d,b,x,r,out,bm]=SEQ[i];const c={ticker:t,devHold:d,bundlePct:b,xPosts:x,isKnownRug:!!r,status:"checking",pnl:0,reason:"scanning…",entryPrice:null,out,bm};
+coins.push(c);log(`${t} · new pair · checking`);render();
+later(()=>{const f=check(c);if(f){c.status="done";c.cls="skip";c.reason=f;log(`${t} · ${f}`);render();return}
+c.status="holding";c.entryPrice=+(Math.random()*.0009+.0001).toFixed(6);bought++;c.reason=`bought ${fmt(STAKE)} @ ${c.entryPrice}`;c.live="+0%";log(`${t} · checks pass → buy`);render();
+let k=0;const steps=bm?2:5,pct=c.out/STAKE*100;const tick=()=>{k++;c.live=(bm?-k*10:Math.round(pct*k/steps))+"%";render();
+if(k<steps)later(tick,700);else{c.status="done";c.pnl=c.out;bank+=c.out;if(c.out>0){wins++;c.cls="win";c.reason=`peak hit → sold ${(1+c.out/STAKE).toFixed(1)}×`;log(`${t} · peak → sold ${c.out>=0?"+":""}${fmt(c.out)}`)}
+else{losses++;c.cls="loss";c.reason="bundle moving → out";log(`${t} · bundle moving → out ${fmt(c.out)}`)}render();if(bank/START>=GOAL||i==SEQ.length-1&&!coins.some(z=>z.status!="done"))finish()}};later(tick,700)},1300);
+later(()=>spawn(i+1),1700)}
+function finish(){coins.filter(c=>c.status=="holding").forEach(c=>{c.status="done";c.reason="goal hit → closed"});frozen=true;timers.forEach(clearTimeout);render();
+$("#live").className="live off";$("#live").textContent="● FROZEN";log(`GOAL ${(bank/START).toFixed(2)}× · closing all positions`);
+$("#sumH").textContent=`${fmt(START)} → ${fmt(bank)}`;$("#sumP").innerHTML=`${(bank/START).toFixed(2)}× · ${bought} bought · ${wins} wins · ${losses} loss · ${coins.length-bought} skipped`;$("#modal").classList.add("on")}
+function start(){timers.forEach(clearTimeout);timers=[];document.querySelectorAll(".list").forEach(l=>l.innerHTML="");$("#log").innerHTML="";$("#modal").classList.remove("on");
+coins=[];bank=START;wins=losses=bought=0;frozen=false;$("#live").className="live";$("#live").textContent="● LIVE";render();log("ISSA TERMINAL online · simulation mode · goal 4×");later(()=>spawn(0),1200)}
+start();
+</script></body></html>
